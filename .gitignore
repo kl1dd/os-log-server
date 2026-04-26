@@ -1,0 +1,5 @@
+log_server
+*.o
+*.out
+*.log
+/tmp/
