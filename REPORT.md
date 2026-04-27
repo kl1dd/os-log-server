@@ -15,110 +15,110 @@ gcc -Wall -Wextra -std=gnu11 log_server.c -o log_server
 # Тесты
 
 ## Проверка запуска(foreground)
-![alt text](image.png)
-![alt text](image-1.png)
+![alt text](images/image.png)
+![alt text](images/image-1.png)
 
 Успешно запустилось, FIFO создался
 
 ## Отправка обычного сообщения
-![alt text](image-3.png)
-![alt text](image-2.png)
+![alt text](images/image-3.png)
+![alt text](images/image-2.png)
 
 FIFO прочитался, вывело в лог, перешло опять в режим ожидания данных
 
 ## Сообщение без перевода строки
-![alt text](image-4.png)
-![alt text](image-5.png)
+![alt text](images/image-4.png)
+![alt text](images/image-5.png)
 
 Проверка, что если в сообщении нет перевода строки, то логсервер добавит этот перенос(так и произошло)
 
 ## Большое сообщение
-![alt text](image-6.png)
-![alt text](image-7.png)
+![alt text](images/image-6.png)
+![alt text](images/image-7.png)
 и так далее до...
-![alt text](image-8.png)
+![alt text](images/image-8.png)
 
 Вывелся ожидаемый результат
 
 ## Интерактивный ввод
-![alt text](image-9.png)
-![alt text](image-10.png)
+![alt text](images/image-9.png)
+![alt text](images/image-10.png)
 
 Вывелся ожидаемый результат
 
 ## Статистика по запросу
-![alt text](image-11.png)
-![alt text](image-12.png)
+![alt text](images/image-11.png)
+![alt text](images/image-12.png)
 
 Вывелся ожидаемый результат
 
 ## Проверка что SIGQUIT игнорируется
-![alt text](image-13.png)
-![alt text](image-14.png)
+![alt text](images/image-13.png)
+![alt text](images/image-14.png)
 
 SIGQUIT проигнорировался, сервер продолжает писать, что живой
 
 ## Завершение через Ctrl+C(SIGINT)
-![alt text](image-15.png)
+![alt text](images/image-15.png)
 
 Не умер сразу, а вывел статистику и корректно завершился
 
-Также удалился FIFO файл: ![alt text](image-16.png)
+Также удалился FIFO файл: ![alt text](images/image-16.png)
 
 
 ## Жёсткое завершение через SIGTERM
-![alt text](image-17.png)
+![alt text](images/image-17.png)
 Процесса больше нет
 
-А также сервер вывел следующее:![alt text](image-18.png)
+А также сервер вывел следующее:![alt text](images/image-18.png)
 
-FIFO тоже нет: ![alt text](image-19.png)
+FIFO тоже нет: ![alt text](images/image-19.png)
 
 ## Запускаем как демон
-![alt text](image-20.png)
+![alt text](images/image-20.png)
 Заметим, что сразу ничего не висит в терминале, управление вернулось
 
-И тем временем процесс жив:![alt text](image-21.png)
+И тем временем процесс жив:![alt text](images/image-21.png)
 
 Сразу проверим логирование, отправляем сообщение и проверяем:
-![alt text](image-22.png)
+![alt text](images/image-22.png)
 
 ## Переход на демон режим через SIGHUP
 
 Запустили в обычном режиме:
-![alt text](image-23.png)
+![alt text](images/image-23.png)
 
 Кидаем SIGHUP:
-![alt text](image-24.png)
+![alt text](images/image-24.png)
 
 Видим в терминале, что ничего не висит:
-![alt text](image-25.png)
+![alt text](images/image-25.png)
 
 И тем временем процесс живой:
-![alt text](image-26.png)
+![alt text](images/image-26.png)
 
 Видим, что в логе написало, что мы переключились на демон-режим:
-![alt text](image-27.png)
+![alt text](images/image-27.png)
 
 Также проверили, что всё работает:
-![alt text](image-28.png)
+![alt text](images/image-28.png)
 
 ## Убиваем через SIGKILL
 
-![alt text](image-29.png)
+![alt text](images/image-29.png)
 
 Процесс убился, при этом остался FIFO файл, но это вполне логично, ведь при SIGKILL процесс завершается немедленно и обработчик не вызывается.
 
 ## Закрытие терминала
 
 Запустили:
-![alt text](image-30.png)
+![alt text](images/image-30.png)
 
 Закрыл полностью терминал, где запускал. В другом проверяем, что с процессом - он жив(перешёл в демон режим):
-![alt text](image-31.png)
+![alt text](images/image-31.png)
 
 Проверим правда ли работает:
-![alt text](image-32.png)
+![alt text](images/image-32.png)
 
 Получается, что да. Вполне логично, что у нас так произошло, ведь при закрытии терминала процесс получил сигнал SIGHUP.
 
