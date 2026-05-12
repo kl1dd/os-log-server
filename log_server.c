@@ -23,7 +23,7 @@ typedef struct {
 } Stats;
 
 Stats stats = {0, 0, 0};
-
+int alarm_interval_global = DEFAULT_ALARM_INTERVAL;
 
 
 volatile sig_atomic_t got_sigint = 0;
@@ -66,8 +66,6 @@ void print_stats(const char *reason) {
     log_msg("bytes: %lu\n", stats.bytes);
     log_msg("alarms: %lu\n", stats.alarms);
 }
-
-
 
 int daemonize_process(void) {
     pid_t pid;
@@ -121,6 +119,58 @@ int daemonize_process(void) {
 
 
 
+void process_signals(void) {
+    if (got_sigalrm) {
+        got_sigalrm = 0;
+        stats.alarms++;
+        log_msg("[alarm_diagnostic] server is alive\n");
+        alarm((unsigned int)alarm_interval_global);
+    }
+
+    if (got_sigusr1) {
+        got_sigusr1 = 0;
+        print_stats("SIGUSR1");
+    }
+}
+
+int process_sighup(const char *log_path, int *is_daemon) {
+    if (!got_sighup) {
+        return 0;
+    }
+    got_sighup = 0;
+
+
+    if (*is_daemon) {
+        log_msg("[signal] SIGHUP ignored: already daemon\n");
+        return 0;
+    }
+
+
+    if (daemonize_process() == -1) {
+        log_msg("daemonize error: %s\n", strerror(errno));
+        return -1;
+    }
+
+    if (log_stream != NULL) {
+        fclose(log_stream);
+    }
+
+    log_stream = fopen(log_path, "a");
+    if (log_stream == NULL) {
+        return -1;
+    }
+
+    *is_daemon = 1;
+
+
+    log_msg("[daemon] switched to daemon mode via SIGHUP\n");
+    print_stats("SIGHUP daemonization");
+
+    return 0;
+}
+
+
+
 int main(int argc, char* argv[]) {
     const char *fifo_path = DEFAULT_FIFO,
                *log_path = DEFAULT_LOG;
@@ -151,6 +201,9 @@ int main(int argc, char* argv[]) {
                 exit(EXIT_FAILURE);
         }
     }
+
+    alarm_interval_global = alarm_interval;
+
 
     if (daemon_mode) {
         if (daemonize_process() == -1) {
@@ -255,55 +308,43 @@ int main(int argc, char* argv[]) {
     int is_daemon = daemon_mode;
     char last_char = '\n';
     while (!got_sigint && !got_sigterm) {
+        process_signals();
+        if (process_sighup(log_path, &is_daemon) == -1) {
+            return EXIT_FAILURE;
+        }
+        if (got_sigint || got_sigterm) {
+            break;
+        }
+
         fifo_fd = open(fifo_path, O_RDONLY);
+
+        process_signals();
+        if (process_sighup(log_path, &is_daemon) == -1) {
+            if (fifo_fd != -1) {
+                close(fifo_fd);
+            }
+            return EXIT_FAILURE;
+        }
+        if (got_sigint || got_sigterm) {
+            if (fifo_fd != -1) {
+                close(fifo_fd);
+            }
+            break;
+        }
+
         if (fifo_fd == -1) {
             if (errno == EINTR) {
-                if (got_sigalrm) {
-                    got_sigalrm = 0;
-                    stats.alarms++;
-                    log_msg("[alarm_diagnostic] server is alive\n");
-                    
-                    alarm((unsigned int)alarm_interval);
-                    continue;
-                }
+                process_signals();
 
-                if (got_sigusr1) {
-                    got_sigusr1 = 0;
-                    print_stats("SIGUSR1");
-                    continue;
-                }
-
-                if (got_sighup && !is_daemon) {
-                    got_sighup = 0;
-
-
-                    if (daemonize_process() == -1) {
-                        log_msg("daemonize error: %s\n", strerror(errno));
-                        return EXIT_FAILURE;
-                    }
-                    
-                    
-                    // после fork() у нас новый процесс → надо переоткрыть лог
-                    if (log_stream != NULL) {
-                        fclose(log_stream);
-                    }
-
-
-
-                    log_stream = fopen(log_path, "a");
-                    if (log_stream == NULL) {
-                        return EXIT_FAILURE;
-                    }
-                    is_daemon = 1;
-
-                    log_msg("[daemon] switched to daemon mode via SIGHUP\n");
-                    print_stats("SIGHUP daemonization");
-                    continue;
-                }
+                if (process_sighup(log_path, &is_daemon) == -1) {
+                    return EXIT_FAILURE;
+                }   
 
                 if (got_sigint || got_sigterm) {
                     break;
                 }
+
+                continue;
             }
 
             log_msg("open error: %s\n", strerror(errno));
@@ -314,7 +355,24 @@ int main(int argc, char* argv[]) {
         ssize_t bytes_read;
         int got_data = 0;
         while (1) {
+            process_signals();
+            if (process_sighup(log_path, &is_daemon) == -1) {
+                close(fifo_fd);
+                return EXIT_FAILURE;
+            }
+            if (got_sigterm) {
+                break;
+            }
+
             bytes_read = read(fifo_fd, buffer, BUFFER_SIZE);
+
+            process_signals();
+            if (process_sighup(log_path, &is_daemon) == -1) {
+                close(fifo_fd);
+                return EXIT_FAILURE;
+            }
+        
+            
 
             if (bytes_read > 0) {
                 got_data = 1;
@@ -325,6 +383,12 @@ int main(int argc, char* argv[]) {
                 buffer[bytes_read] = '\0';
                 log_msg("%s", buffer);
 
+
+                process_signals();
+                if (process_sighup(log_path, &is_daemon) == -1) {
+                    close(fifo_fd);
+                    return EXIT_FAILURE;
+                }
                 if (got_sigterm) {
                     break;
                 }
@@ -337,51 +401,13 @@ int main(int argc, char* argv[]) {
 
             if (bytes_read == -1) {
                 if (errno == EINTR) {
-                    if (got_sigalrm) {
-                        got_sigalrm = 0;
-                        stats.alarms++;
-                        log_msg("[alarm_diagnostic] server is alive\n");
-                        
-                        alarm((unsigned int)alarm_interval);
-                        continue;
-                    }
+                    process_signals();
 
-                    if (got_sigusr1) {
-                        got_sigusr1 = 0;
-                        print_stats("SIGUSR1");
-                        continue;
-                    }
-
-                    if (got_sighup && !is_daemon) {
-                        got_sighup = 0;
-
-
-                        if (daemonize_process() == -1) {
-                            log_msg("daemonize error: %s\n", strerror(errno));
-                            return EXIT_FAILURE;
-                        }
-                        
-                        
-                        // после fork() у нас новый процесс → надо переоткрыть лог
-                        if (log_stream != NULL) {
-                            fclose(log_stream);
-                        }
-
-
-
-                        log_stream = fopen(log_path, "a");
-                        if (log_stream == NULL) {
-                            return EXIT_FAILURE;
-                        }
-                        is_daemon = 1;
-
-                        log_msg("[daemon] switched to daemon mode via SIGHUP\n");
-                        print_stats("SIGHUP daemonization");
-                        continue;
+                    if (process_sighup(log_path, &is_daemon) == -1) {
+                        return EXIT_FAILURE;
                     }
 
                 
-
                     if (got_sigterm) {
                         break;
                     }
